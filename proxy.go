@@ -576,7 +576,7 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
 		}
-		if isOtherClosableError(err) {
+		if isClosableError(err) {
 			closing = errClose
 		}
 	}
@@ -586,14 +586,14 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
 		}
-		if isOtherClosableError(err) {
+		if isClosableError(err) {
 			closing = errClose
 		}
 	}
 	return closing
 }
 
-func isOtherClosableError(err error) bool {
+func isClosableError(err error) bool {
 	switch err {
 	case syscall.EAGAIN, syscall.EINVAL, syscall.ENOENT:
 		return true
