@@ -305,6 +305,7 @@ func TestIntegrationUnexpectedUpstreamFailure(t *testing.T) {
 	p := NewProxy()
 	defer p.Close()
 
+	// setting a large proxy timeout
 	p.SetTimeout(1000 * time.Second)
 
 	sl, err := net.Listen("tcp", "[::]:0")
@@ -315,44 +316,20 @@ func TestIntegrationUnexpectedUpstreamFailure(t *testing.T) {
 	go func() {
 		time.Sleep(1 * time.Second)
 		conn, err := sl.Accept()
-		fmt.Println("sl accepted")
 		if err != nil {
 			log.Errorf("proxy_test: failed to accept connection: %v", err)
 			return
 		}
-		// defer func() {
-		// 	time.Sleep(5 * time.Second)
-		// 	conn.Close()
-		// }()
+		defer conn.Close()
 
-		fmt.Printf("proxy_test: accepted connection: %s\n", conn.RemoteAddr())
+		log.Infof("proxy_test: accepted connection: %s\n", conn.RemoteAddr())
 
 		req, err := http.ReadRequest(bufio.NewReader(conn))
-		fmt.Println("read sl request")
 		if err != nil {
 			log.Errorf("proxy_test: failed to read request: %v", err)
 			return
 		}
 
-		// if req.Header.Get("Expect") == "100-continue" {
-		// 	fmt.Printf("proxy_test: received 100-continue request\n")
-
-		// 	conn.Write([]byte("HTTP/1.1 100 Continue\r\n\r\n"))
-
-		// 	fmt.Printf("proxy_test: sent 100-continue response\n")
-		// }
-		// else {
-		// 	fmt.Printf("proxy_test: received non 100-continue request\n")
-
-		// 	res := proxyutil.NewResponse(417, nil, req)
-		// 	res.Header.Set("Connection", "close")
-		// 	res.Write(conn)
-		// 	return
-		// }
-
-		// time.Sleep(5 * time.Second)
-		// res := proxyutil.NewResponse(200, req.Body, nil)
-		// body := "Hello world"
 		res := &http.Response{
 			Status:        "200 OK",
 			StatusCode:    200,
@@ -364,12 +341,10 @@ func TestIntegrationUnexpectedUpstreamFailure(t *testing.T) {
 			Request:       req,
 			Header:        make(http.Header, 0),
 		}
-		// res.Header.Set("Content-Length", "45")
 		res.Write(conn)
-		// conn.Write([]byte("body cntent"))
 		conn.Close()
 
-		fmt.Printf("proxy_test: sent 200 response\n")
+		log.Infof("proxy_test: sent 200 response\n")
 	}()
 
 	tm := martiantest.NewModifier()
@@ -379,7 +354,6 @@ func TestIntegrationUnexpectedUpstreamFailure(t *testing.T) {
 	go p.Serve(l)
 
 	conn, err := net.Dial("tcp", l.Addr().String())
-	fmt.Println("dialling")
 	if err != nil {
 		t.Fatalf("net.Dial(): got %v, want no error", err)
 	}
@@ -388,22 +362,10 @@ func TestIntegrationUnexpectedUpstreamFailure(t *testing.T) {
 	host := sl.Addr().String()
 	raw := fmt.Sprintf("POST http://%s/ HTTP/1.1\r\n"+
 		"Host: %s\r\n"+
-		//"Content-Length: 12\r\n"+
 		"\r\n", host, host)
-	fmt.Println("writing to conn")
 	if _, err := conn.Write([]byte(raw)); err != nil {
 		t.Fatalf("conn.Write(headers): got %v, want no error", err)
 	}
-
-	// go func() {
-	// 	select {
-	// 	case <-time.After(time.Second):
-	// 		fmt.Println("writing body after 1 sec")
-	// 		conn.Write([]byte("body content"))
-	// 		// <-time.After(2 * time.Second)
-	// 		// conn.Close()
-	// 	}
-	// }()
 
 	res, err := http.ReadResponse(bufio.NewReader(conn), nil)
 	if err != nil {
@@ -416,6 +378,7 @@ func TestIntegrationUnexpectedUpstreamFailure(t *testing.T) {
 	}
 
 	got, err := ioutil.ReadAll(res.Body)
+	// if below error is unhandled in proxy, the test will timeout.
 	if err != io.ErrUnexpectedEOF {
 		t.Fatalf("ioutil.ReadAll(): got %v, want %v", err, io.ErrUnexpectedEOF)
 	}

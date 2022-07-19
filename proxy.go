@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
-	"internal/poll"
 	"io"
 	"io/fs"
 	"net"
@@ -587,6 +586,9 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
 		}
+		if isOtherClosableError(err) {
+			closing = errClose
+		}
 	}
 	return closing
 }
@@ -599,9 +601,7 @@ func isOtherClosableError(err error) bool {
 		return true
 	case fs.ErrClosed, fs.ErrExist, fs.ErrInvalid, fs.ErrNotExist, fs.ErrPermission:
 		return true
-	case os.ErrInvalid, os.ErrClosed:
-		return true
-	case poll.ErrFileClosing, poll.ErrNetClosing, poll.ErrDeadlineExceeded, poll.ErrNotPollable:
+	case os.ErrInvalid, os.ErrClosed, os.ErrDeadlineExceeded:
 		return true
 	case net.ErrClosed, net.ErrWriteToConnected:
 		return true
