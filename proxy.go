@@ -20,7 +20,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"internal/poll"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -28,6 +30,7 @@ import (
 	"os"
 	"regexp"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/martian/v3/mitm"
@@ -593,10 +596,8 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		fmt.Printf("martian: got error while writing response back to client: %v\n", err)
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
-		} else {
-			fmt.Println("non close write error")
 		}
-		if err == io.ErrUnexpectedEOF {
+		if isOtherClosableError(err) {
 			closing = errClose
 		}
 	}
@@ -617,8 +618,55 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
 		}
+		if isOtherClosableError(err) {
+			closing = errClose
+		}
 	}
 	return closing
+}
+
+func isOtherClosableError(err error) bool {
+	switch err {
+	case syscall.EAGAIN, syscall.EINVAL, syscall.ENOENT:
+		return true
+	case io.ErrClosedPipe, io.ErrNoProgress, io.ErrShortBuffer, io.ErrShortWrite, io.ErrUnexpectedEOF:
+		return true
+	case fs.ErrClosed, fs.ErrExist, fs.ErrInvalid, fs.ErrNotExist, fs.ErrPermission:
+		return true
+	case os.ErrInvalid, os.ErrClosed:
+		return true
+	case poll.ErrFileClosing, poll.ErrNetClosing, poll.ErrDeadlineExceeded, poll.ErrNotPollable:
+		return true
+	case net.ErrClosed, net.ErrWriteToConnected:
+		return true
+	case http.ErrBodyReadAfterClose:
+		return true
+	}
+
+	switch t := err.(type) {
+	case *net.OpError:
+		if t.Op == "dial" {
+			println("Unknown host")
+			return true
+		} else if t.Op == "read" {
+			println("Connection refused")
+			return true
+		}
+	case syscall.Errno:
+		if t == syscall.ECONNREFUSED {
+			println("Connection refused")
+			return true
+		}
+	case *os.PathError:
+		if t == os.ErrClosed {
+			return true
+		}
+	case net.Error:
+		if t.Timeout() {
+			return true
+		}
+	}
+	return false
 }
 
 // A peekedConn subverts the net.Conn.Read implementation, primarily so that
