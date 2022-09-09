@@ -20,15 +20,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"regexp"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/martian/v3/log"
@@ -576,7 +573,7 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
 		}
-		if isClosableError(err) {
+		if err == io.ErrUnexpectedEOF {
 			closing = errClose
 		}
 	}
@@ -586,53 +583,8 @@ func (p *Proxy) handle(ctx *Context, conn net.Conn, brw *bufio.ReadWriter) error
 		if _, ok := err.(*trafficshape.ErrForceClose); ok {
 			closing = errClose
 		}
-		if isClosableError(err) {
-			closing = errClose
-		}
 	}
 	return closing
-}
-
-func isClosableError(err error) bool {
-	switch err {
-	case syscall.EAGAIN, syscall.EINVAL, syscall.ENOENT:
-		return true
-	case io.ErrClosedPipe, io.ErrNoProgress, io.ErrShortBuffer, io.ErrShortWrite, io.ErrUnexpectedEOF:
-		return true
-	case fs.ErrClosed, fs.ErrExist, fs.ErrInvalid, fs.ErrNotExist, fs.ErrPermission:
-		return true
-	case os.ErrInvalid, os.ErrClosed, os.ErrDeadlineExceeded:
-		return true
-	case net.ErrClosed, net.ErrWriteToConnected:
-		return true
-	case http.ErrBodyReadAfterClose:
-		return true
-	}
-
-	switch t := err.(type) {
-	case *net.OpError:
-		if t.Op == "dial" {
-			println("Unknown host")
-			return true
-		} else if t.Op == "read" {
-			println("Connection refused")
-			return true
-		}
-	case syscall.Errno:
-		if t == syscall.ECONNREFUSED {
-			println("Connection refused")
-			return true
-		}
-	case *os.PathError:
-		if t == os.ErrClosed {
-			return true
-		}
-	case net.Error:
-		if t.Timeout() {
-			return true
-		}
-	}
-	return false
 }
 
 // A peekedConn subverts the net.Conn.Read implementation, primarily so that
