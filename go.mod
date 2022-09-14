@@ -1,4 +1,4 @@
-module github.com/google/martian/v3
+module github.com/arun-kbharathan-e3768/martian/v3
 
 go 1.18
 
